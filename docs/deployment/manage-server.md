@@ -19,14 +19,12 @@ licence. Without that activation, it runs in free tier (limited features).
 ## Quick start
 
 ```bash
-git clone --depth 1 https://github.com/primatekuntech/triton.git
-cd triton/scripts/deploy/manage-server
-
-sudo bash install.sh \
-    --license-server-pubkey 2c59996cff525418d88fd3c9b51e350ee3cb615a84f7af44a69a7aca28bc8451 \
-    --license-server-url    https://license.vendor.example.com \
-    --gateway-hostname      manage.customer.example.com \
-    --manage-host-ip        10.0.1.50
+curl -fsSL https://raw.githubusercontent.com/primatekuntech/triton-install/main/get.sh \
+    | sudo bash -s -- \
+        --license-server-pubkey 2c59996cff525418d88fd3c9b51e350ee3cb615a84f7af44a69a7aca28bc8451 \
+        --license-server-url    https://license.vendor.example.com \
+        --gateway-hostname      manage.customer.example.com \
+        --manage-host-ip        10.0.1.50
 ```
 
 The script:
@@ -53,12 +51,13 @@ The container speaks plain HTTP on `:8082`. Terminate TLS at Caddy or
 Nginx (see [prerequisites.md](prerequisites.md)). Once the proxy is up:
 
 ```bash
-sudo bash install.sh \
-    --license-server-pubkey HEX \
-    --license-server-url    https://license.vendor.example.com \
-    --gateway-hostname      manage.customer.example.com \
-    --manage-host-ip        10.0.1.50 \
-    --no-tls
+curl -fsSL https://raw.githubusercontent.com/primatekuntech/triton-install/main/get.sh \
+    | sudo bash -s -- \
+        --license-server-pubkey HEX \
+        --license-server-url    https://license.vendor.example.com \
+        --gateway-hostname      manage.customer.example.com \
+        --manage-host-ip        10.0.1.50 \
+        --no-tls
 ```
 
 `--no-tls` skips the manage-server's own TLS check; the proxy handles HTTPS.
@@ -73,15 +72,24 @@ TRITON_MANAGE_TLS_KEY=/etc/triton/tls/privkey.pem
 TLS_CERT_HOST_DIR=/etc/triton/tls
 ```
 
-then `sudo bash upgrade.sh` to recreate.
+then run the upgrade one-liner to recreate the container:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/primatekuntech/triton-install/main/get.sh \
+    | sudo bash -s -- --upgrade
+```
 
 Note: the **agent gateway** (port 8443) ALWAYS uses mTLS with a self-managed
 CA. It does not need or use the public TLS cert above. Don't proxy 8443.
 
 ## What got created
 
+Installer files are saved to:
+- **Linux**: `/opt/triton-manage-server/`
+- **macOS**: `~/.local/share/triton-manage-server/`
+
 ```
-scripts/deploy/manage-server/
+/opt/triton-manage-server/     (or ~/.local/share/triton-manage-server/ on macOS)
 ├── compose.yaml         # bundled stack (postgres + manage-server)
 ├── env.template         # reference; do not edit
 ├── .env                 # YOUR secrets; mode 0600; back this up
@@ -143,7 +151,7 @@ podman exec triton-manage-db pg_dump -U triton triton_manage \
     | gzip > /var/backups/triton/manage-$(date +%F).sql.gz
 
 # Back up .env (vault key + JWT key + worker key live here)
-cp scripts/deploy/manage-server/.env /var/backups/triton/manage-env-$(date +%F)
+cp /opt/triton-manage-server/.env /var/backups/triton/manage-env-$(date +%F)
 ```
 
 Daily via `cron`. Retain 14+ days.
@@ -162,9 +170,13 @@ Re-enter credentials in the portal.
 ### Upgrade
 
 ```bash
-cd scripts/deploy/manage-server
-sudo bash upgrade.sh                          # latest from ghcr.io
-sudo bash upgrade.sh --image .../triton-manageserver:1.4.2
+# Latest from ghcr.io
+curl -fsSL https://raw.githubusercontent.com/primatekuntech/triton-install/main/get.sh \
+    | sudo bash -s -- --upgrade
+
+# Pin a specific version
+curl -fsSL https://raw.githubusercontent.com/primatekuntech/triton-install/main/get.sh \
+    | sudo bash -s -- --upgrade --image ghcr.io/primatekuntech/triton-manage-server:1.4.2
 ```
 
 Pre-upgrade `pg_dump` runs automatically. Migrations run on container
@@ -179,7 +191,8 @@ podman logs -f triton-manageserver
 ### Rollback
 
 ```bash
-sudo bash upgrade.sh --image .../triton-manageserver:1.4.1
+curl -fsSL https://raw.githubusercontent.com/primatekuntech/triton-install/main/get.sh \
+    | sudo bash -s -- --upgrade --image ghcr.io/primatekuntech/triton-manage-server:1.4.1
 ```
 
 If a new version's migration is incompatible with the older binary,
@@ -188,14 +201,20 @@ restore the pre-upgrade dump first:
 ```bash
 gunzip < /var/backups/triton/manage-pre-upgrade-2026-01-15-...sql.gz \
     | podman exec -i triton-manage-db psql -U triton triton_manage
-sudo bash upgrade.sh --image <PREVIOUS_TAG>
+curl -fsSL https://raw.githubusercontent.com/primatekuntech/triton-install/main/get.sh \
+    | sudo bash -s -- --upgrade --image ghcr.io/primatekuntech/triton-manage-server:<PREVIOUS_TAG>
 ```
 
 ### Uninstall
 
 ```bash
-sudo bash uninstall.sh                # stop + remove containers, KEEP data
-sudo bash uninstall.sh --purge-data   # also delete DB + bins + vault (DESTRUCTIVE)
+# Stop + remove containers, KEEP data
+curl -fsSL https://raw.githubusercontent.com/primatekuntech/triton-install/main/get.sh \
+    | sudo bash -s -- --uninstall
+
+# Also delete DB + bins + vault (DESTRUCTIVE)
+curl -fsSL https://raw.githubusercontent.com/primatekuntech/triton-install/main/get.sh \
+    | sudo bash -s -- --uninstall --purge-data
 ```
 
 `.env` is never deleted automatically. **If the host had agents enrolled,
@@ -231,16 +250,21 @@ If you're moving customers off one License Server onto another:
    TRITON_MANAGE_LICENSE_SERVER_PUBKEY=<new vendor's pubkey>
    TRITON_LICENSE_TOKEN=<new licence token>
    ```
-3. `sudo bash upgrade.sh` — restarts the container with new env, which
-   triggers a re-activation on first heartbeat.
+3. Run the upgrade one-liner to restart the container with the new env (re-activation happens on first heartbeat):
+   ```bash
+   curl -fsSL https://raw.githubusercontent.com/primatekuntech/triton-install/main/get.sh \
+       | sudo bash -s -- --upgrade
+   ```
 
 ### Rotate the JWT signing key
 
 Every active session is invalidated; users re-login.
 
 ```bash
-sed -i "s|^TRITON_MANAGE_JWT_SIGNING_KEY=.*|TRITON_MANAGE_JWT_SIGNING_KEY=$(openssl rand -hex 32)|" .env
-sudo bash upgrade.sh
+sed -i "s|^TRITON_MANAGE_JWT_SIGNING_KEY=.*|TRITON_MANAGE_JWT_SIGNING_KEY=$(openssl rand -hex 32)|" \
+    /opt/triton-manage-server/.env
+curl -fsSL https://raw.githubusercontent.com/primatekuntech/triton-install/main/get.sh \
+    | sudo bash -s -- --upgrade
 ```
 
 ### Rotate the vault key
@@ -251,8 +275,12 @@ Rotating the key without re-encrypting orphans the existing credentials.
 There's no automatic re-encryption tool today. Recipe:
 
 1. Export each credential via the API (it gets decrypted with the OLD key).
-2. Update `TRITON_VAULT_KEY` in `.env`.
-3. `sudo bash upgrade.sh`.
+2. Update `TRITON_VAULT_KEY` in `/opt/triton-manage-server/.env`.
+3. Run the upgrade one-liner to restart with the new key:
+   ```bash
+   curl -fsSL https://raw.githubusercontent.com/primatekuntech/triton-install/main/get.sh \
+       | sudo bash -s -- --upgrade
+   ```
 4. Re-enter each credential through the UI (encrypts with NEW key).
 
 ## Sizing reference
@@ -332,7 +360,7 @@ timeout (postgres still warming up).
 
 ## Reference
 
-- Env var details — [env.template](../../scripts/deploy/manage-server/env.template)
+- Env var details — `/opt/triton-manage-server/env.template` (Linux) or `~/.local/share/triton-manage-server/env.template` (macOS)
 - Manage Server feature reference — [../MANAGE_PORTAL_USER_MANUAL.md](../MANAGE_PORTAL_USER_MANUAL.md)
 - Hosts model — [../MANAGE_SERVER_HOSTS.md](../MANAGE_SERVER_HOSTS.md)
 - Architecture — [../SYSTEM_ARCHITECTURE.md](../SYSTEM_ARCHITECTURE.md)
