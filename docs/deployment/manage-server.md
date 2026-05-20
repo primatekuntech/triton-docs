@@ -358,6 +358,37 @@ Look for: missing `TRITON_MANAGE_DB_URL`, JWT key shorter than 32 bytes
 after hex-decode, license-server-pubkey not 64 hex chars, DB pool ping
 timeout (postgres still warming up).
 
+### "license is bound to a different host"
+
+The offline `.lic` file was generated with a **host-bound machine ID** that
+doesn't match this host. Possible causes:
+
+- You copied the `.lic` file to a different server (this is the protection working as designed).
+- The host's `/etc/machine-id` was regenerated (e.g., after cloning a VM).
+- `/etc/machine-id` is not mounted into the container.
+
+**Resolution:**
+
+1. Verify the volume mount in `compose.yaml`:
+   ```yaml
+   volumes:
+     - /etc/machine-id:/etc/machine-id:ro
+   ```
+2. If the VM was cloned or the ID was regenerated, request a new `.lic` from your vendor with the updated machine ID printed by `install.sh`.
+3. To get an unbound token (portable, any host), ask your vendor to issue the `.lic` without a machine-id binding.
+
+### Host-bound licences — getting your Machine ID
+
+After install, `install.sh` prints:
+
+```
+[manage-server] Machine ID (SHA-3-256): <64-hex-chars>
+```
+
+Share that value with your vendor. They enter it in the License Portal when
+generating the offline `.lic` file. Once bound, the file is rejected on any
+other host — preventing unauthorised duplication.
+
 ## Reference
 
 - Env var details — `/opt/triton-manage-server/env.template` (Linux) or `~/.local/share/triton-manage-server/env.template` (macOS)
